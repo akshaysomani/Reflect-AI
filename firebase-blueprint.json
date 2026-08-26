@@ -1,0 +1,47 @@
+{
+  "entities": {
+    "User": {
+      "collection": "users",
+      "fields": {
+        "uid": { "type": "string", "description": "Firebase Auth UID" },
+        "email": { "type": "string", "description": "User email" },
+        "displayName": { "type": "string", "description": "User display name" },
+        "photoURL": { "type": "string", "description": "Profile picture URL" },
+        "createdAt": { "type": "string", "description": "ISO timestamp" },
+        "updatedAt": { "type": "string", "description": "ISO timestamp" }
+      }
+    },
+    "Reflection": {
+      "collection": "users/{userId}/reflections",
+      "fields": {
+        "id": { "type": "string", "description": "Unique reflection document ID" },
+        "userId": { "type": "string", "description": "Owner UID" },
+        "title": { "type": "string", "description": "3-5 word reflection title" },
+        "primaryEmotion": { "type": "string", "description": "Extracted primary emotion (e.g. Grateful, Anxious, Hopeful, Overwhelmed, Joyful)" },
+        "emotionEmoji": { "type": "string", "description": "Emoji representing the mood" },
+        "sentimentScore": { "type": "number", "description": "Sentiment score between -1.0 and 1.0" },
+        "tags": { "type": "array", "description": "List of thematic tags" },
+        "oneSentenceTakeaway": { "type": "string", "description": "Core 1-sentence insight" },
+        "messages": { "type": "array", "description": "Conversation turns between user and Gemini reflection partner" },
+        "audioTranscript": { "type": "string", "description": "Optional transcribed voice reflection text" },
+        "createdAt": { "type": "string", "description": "ISO timestamp" },
+        "updatedAt": { "type": "string", "description": "ISO timestamp" }
+      }
+    },
+    "WeeklySynthesis": {
+      "collection": "users/{userId}/syntheses",
+      "fields": {
+        "id": { "type": "string", "description": "Unique synthesis ID" },
+        "userId": { "type": "string", "description": "Owner UID" },
+        "weekStartDate": { "type": "string", "description": "Start date for analysis window" },
+        "weekEndDate": { "type": "string", "description": "End date for analysis window" },
+        "entryCount": { "type": "number", "description": "Number of reflections analyzed" },
+        "overview": { "type": "string", "description": "Comprehensive weekly summary" },
+        "dominantEmotions": { "type": "array", "description": "Top recurring emotions" },
+        "breakthroughs": { "type": "array", "description": "Key realizations and growth milestones" },
+        "growthRecommendations": { "type": "array", "description": "Actionable habits and mindfulness prompts for next week" },
+        "createdAt": { "type": "string", "description": "ISO timestamp" }
+      }
+    }
+  }
+}

@@ -1,0 +1,6 @@
+{
+  "name": "AI Journal & Reflection Partner",
+  "description": "Secure, full-stack, user-authenticated AI journaling, voice reflections, and automated sentiment & weekly synthesis powered by Gemini and Cloud Firestore.",
+  "requestFramePermissions": ["microphone"],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
