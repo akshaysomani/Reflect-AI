@@ -1,7 +1,19 @@
 import { ChatMessage, SentimentAnalysis, WeeklySynthesis, ReflectionEntry } from '../types';
 import { getCurrentUserToken } from './firebase';
 
-const API_BASE_URL = (import.meta.env.VITE_API_BASE_URL || '').replace(/\/$/, '');
+const getApiBaseUrl = (): string => {
+  const envUrl = import.meta.env.VITE_API_BASE_URL;
+  if (envUrl && typeof envUrl === 'string' && envUrl.trim() !== '') {
+    return envUrl.trim().replace(/\/$/, '');
+  }
+  // Local development fallback
+  if (import.meta.env.DEV) {
+    return 'http://localhost:3000';
+  }
+  return '';
+};
+
+export const API_BASE_URL = getApiBaseUrl();
 
 async function getAuthHeaders(): Promise<Record<string, string>> {
   const headers: Record<string, string> = {
@@ -12,6 +24,20 @@ async function getAuthHeaders(): Promise<Record<string, string>> {
     headers['Authorization'] = `Bearer ${token}`;
   }
   return headers;
+}
+
+export async function checkBackendHealth(): Promise<{
+  status: string;
+  service?: string;
+  environment?: string;
+  geminiConfigured?: boolean;
+  firebaseAdminConfigured?: boolean;
+}> {
+  const res = await fetch(`${API_BASE_URL}/api/health`);
+  if (!res.ok) {
+    throw new Error(`Health check failed with status: ${res.status}`);
+  }
+  return await res.json();
 }
 
 export async function askReflectionPartner(
@@ -37,6 +63,11 @@ export async function askReflectionPartner(
 
   if (!res.ok) {
     const errorData = await res.json().catch(() => ({}));
+    if (res.status === 404 && !API_BASE_URL) {
+      throw new Error(
+        'Backend 404: VITE_API_BASE_URL environment variable is missing on Vercel. Set VITE_API_BASE_URL=<CLOUD_RUN_URL> in Vercel and redeploy.'
+      );
+    }
     throw new Error(errorData.error || errorData.details || `Server responded with status ${res.status}`);
   }
 
@@ -65,6 +96,11 @@ export async function analyzeJournalSentiment(
 
   if (!res.ok) {
     const errorData = await res.json().catch(() => ({}));
+    if (res.status === 404 && !API_BASE_URL) {
+      throw new Error(
+        'Backend 404: VITE_API_BASE_URL environment variable is missing on Vercel. Set VITE_API_BASE_URL=<CLOUD_RUN_URL> in Vercel and redeploy.'
+      );
+    }
     throw new Error(errorData.error || errorData.details || `Sentiment analysis failed: ${res.status}`);
   }
 
@@ -89,6 +125,11 @@ export async function generateWeeklySynthesis(
 
   if (!res.ok) {
     const errorData = await res.json().catch(() => ({}));
+    if (res.status === 404 && !API_BASE_URL) {
+      throw new Error(
+        'Backend 404: VITE_API_BASE_URL environment variable is missing on Vercel. Set VITE_API_BASE_URL=<CLOUD_RUN_URL> in Vercel and redeploy.'
+      );
+    }
     throw new Error(errorData.error || errorData.details || `Weekly synthesis generation failed: ${res.status}`);
   }
 
@@ -110,4 +151,5 @@ export async function cleanVoiceTranscript(rawSpeech: string): Promise<string> {
   const data = await res.json();
   return data.cleanedText || rawSpeech;
 }
+
 
