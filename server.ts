@@ -471,6 +471,7 @@ app.use((err: any, req: express.Request, res: express.Response, next: express.Ne
 // ================= VITE / STATIC MIDDLEWARE & LOCAL START =================
 async function startServer() {
   if (process.env.NODE_ENV !== 'production') {
+    // @ts-ignore
     const { createServer: createViteServer } = await import('vite');
     const vite = await createViteServer({
       server: { middlewareMode: true },
