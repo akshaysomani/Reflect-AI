@@ -6,10 +6,11 @@ const getApiBaseUrl = (): string => {
   if (envUrl && typeof envUrl === 'string' && envUrl.trim() !== '') {
     return envUrl.trim().replace(/\/$/, '');
   }
-  // Local development fallback
+  // Local development with separate dev server
   if (import.meta.env.DEV) {
     return 'http://localhost:3000';
   }
+  // In production, empty string uses the same origin (Vercel Serverless /api)
   return '';
 };
 
@@ -63,11 +64,6 @@ export async function askReflectionPartner(
 
   if (!res.ok) {
     const errorData = await res.json().catch(() => ({}));
-    if (res.status === 404 && !API_BASE_URL) {
-      throw new Error(
-        'Backend 404: VITE_API_BASE_URL environment variable is missing on Vercel. Set VITE_API_BASE_URL=<CLOUD_RUN_URL> in Vercel and redeploy.'
-      );
-    }
     throw new Error(errorData.error || errorData.details || `Server responded with status ${res.status}`);
   }
 
@@ -96,11 +92,6 @@ export async function analyzeJournalSentiment(
 
   if (!res.ok) {
     const errorData = await res.json().catch(() => ({}));
-    if (res.status === 404 && !API_BASE_URL) {
-      throw new Error(
-        'Backend 404: VITE_API_BASE_URL environment variable is missing on Vercel. Set VITE_API_BASE_URL=<CLOUD_RUN_URL> in Vercel and redeploy.'
-      );
-    }
     throw new Error(errorData.error || errorData.details || `Sentiment analysis failed: ${res.status}`);
   }
 
@@ -125,11 +116,6 @@ export async function generateWeeklySynthesis(
 
   if (!res.ok) {
     const errorData = await res.json().catch(() => ({}));
-    if (res.status === 404 && !API_BASE_URL) {
-      throw new Error(
-        'Backend 404: VITE_API_BASE_URL environment variable is missing on Vercel. Set VITE_API_BASE_URL=<CLOUD_RUN_URL> in Vercel and redeploy.'
-      );
-    }
     throw new Error(errorData.error || errorData.details || `Weekly synthesis generation failed: ${res.status}`);
   }
 
@@ -151,5 +137,6 @@ export async function cleanVoiceTranscript(rawSpeech: string): Promise<string> {
   const data = await res.json();
   return data.cleanedText || rawSpeech;
 }
+
 
 

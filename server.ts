@@ -427,6 +427,19 @@ Return only the cleaned reflection text.`;
 });
 
 // ================= VITE / STATIC MIDDLEWARE =================
+// Global Error Handler
+app.use((err: any, req: express.Request, res: express.Response, next: express.NextFunction) => {
+  console.error('Unhandled Server Error:', err?.message || err);
+  if (res.headersSent) {
+    return next(err);
+  }
+  res.status(500).json({
+    error: 'An internal server error occurred.',
+    message: process.env.NODE_ENV === 'production' ? 'Internal server error' : err?.message,
+  });
+});
+
+// ================= VITE / STATIC MIDDLEWARE & LOCAL START =================
 async function startServer() {
   if (process.env.NODE_ENV !== 'production') {
     const { createServer: createViteServer } = await import('vite');
@@ -443,24 +456,19 @@ async function startServer() {
     });
   }
 
-  // Global Error Handler
-  app.use((err: any, req: express.Request, res: express.Response, next: express.NextFunction) => {
-    console.error('Unhandled Server Error:', err?.message || err);
-    if (res.headersSent) {
-      return next(err);
-    }
-    res.status(500).json({
-      error: 'An internal server error occurred.',
-      message: process.env.NODE_ENV === 'production' ? 'Internal server error' : err?.message,
-    });
-  });
-
   app.listen(PORT, '0.0.0.0', () => {
     console.log(`Reflect-AI Server running on http://0.0.0.0:${PORT} (NODE_ENV=${process.env.NODE_ENV || 'development'})`);
   });
 }
 
-startServer().catch((err) => {
-  console.error('Fatal error starting server:', err);
-});
+// Only start standalone HTTP server when not running in Vercel Serverless environment
+if (process.env.VERCEL !== '1') {
+  startServer().catch((err) => {
+    console.error('Fatal error starting server:', err);
+  });
+}
+
+export default app;
+export { app };
+
 
