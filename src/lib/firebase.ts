@@ -159,6 +159,17 @@ export async function logoutUser(): Promise<void> {
   }
 }
 
+export async function getCurrentUserToken(): Promise<string | null> {
+  if (auth && auth.currentUser) {
+    try {
+      return await auth.currentUser.getIdToken();
+    } catch (e) {
+      console.warn('Failed to retrieve Firebase ID token:', e);
+    }
+  }
+  return null;
+}
+
 export function subscribeToAuth(callback: (user: UserProfile | null) => void) {
   if (!auth) {
     const cached = localStorage.getItem(USER_SESSION_KEY);

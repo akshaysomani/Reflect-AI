@@ -1,19 +1,116 @@
 import express from 'express';
 import path from 'path';
 import dotenv from 'dotenv';
+import cors from 'cors';
+import { initializeApp, getApps } from 'firebase-admin/app';
+import { getAuth, DecodedIdToken } from 'firebase-admin/auth';
 import { GoogleGenAI } from '@google/genai';
-import { createServer as createViteServer } from 'vite';
 
 dotenv.config();
 
 const app = express();
-const PORT = 3000;
+const PORT = Number(process.env.PORT) || 3000;
 
-// 1. Mount JSON & URL-encoded body parsers before all API routes
+// ================= FIREBASE ADMIN INITIALIZATION =================
+// Server-side Firebase Admin verification using project ID or ADC
+if (getApps().length === 0) {
+  try {
+    const projectId =
+      process.env.FIREBASE_PROJECT_ID ||
+      process.env.GCLOUD_PROJECT ||
+      'gen-ai-cohort-3-defb5';
+
+    initializeApp({
+      projectId,
+    });
+  } catch (adminErr: any) {
+    console.warn('Firebase Admin initialization notice:', adminErr?.message || adminErr);
+  }
+}
+
+// ================= CORS CONFIGURATION =================
+const defaultAllowedOrigins = [
+  'http://localhost:5173',
+  'http://localhost:3000',
+  'http://127.0.0.1:5173',
+  'http://127.0.0.1:3000',
+  'https://reflect-ai-xi-three.vercel.app',
+];
+
+const envFrontendOrigins = process.env.FRONTEND_URL
+  ? process.env.FRONTEND_URL.split(',').map((o) => o.trim()).filter(Boolean)
+  : [];
+
+const allowedOrigins = Array.from(
+  new Set([...defaultAllowedOrigins, ...envFrontendOrigins])
+);
+
+app.use(
+  cors({
+    origin: (origin, callback) => {
+      // Allow requests with no origin (e.g. server-to-server, curl, Cloud Run health probes)
+      if (!origin) return callback(null, true);
+
+      if (allowedOrigins.includes(origin) || allowedOrigins.includes('*')) {
+        return callback(null, true);
+      }
+
+      // Allow Vercel preview deployment origins if applicable
+      if (origin.endsWith('.vercel.app')) {
+        return callback(null, true);
+      }
+
+      return callback(
+        new Error(`CORS blocked: Origin ${origin} not permitted by Access-Control-Allow-Origin policy.`)
+      );
+    },
+    credentials: true,
+    methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+    allowedHeaders: ['Content-Type', 'Authorization'],
+  })
+);
+
+// Explicit preflight handler
+app.options('*', cors());
+
+// ================= BODY PARSERS =================
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 
-// 2. Initialize Gemini SDK (Lazy-safe initialization with official telemetry headers)
+// ================= AUTHENTICATION VERIFICATION MIDDLEWARE =================
+export interface AuthenticatedRequest extends express.Request {
+  user?: DecodedIdToken;
+}
+
+async function verifyAuthToken(
+  req: AuthenticatedRequest,
+  res: express.Response,
+  next: express.NextFunction
+) {
+  const authHeader = req.headers.authorization;
+  if (authHeader && authHeader.startsWith('Bearer ')) {
+    const idToken = authHeader.split('Bearer ')[1].trim();
+    if (idToken) {
+      try {
+        if (getApps().length > 0) {
+          const auth = getAuth();
+          const decodedToken = await auth.verifyIdToken(idToken);
+          req.user = decodedToken;
+        }
+      } catch (err: any) {
+        console.warn('Firebase token verification note:', err?.message || 'Invalid token');
+        return res.status(401).json({
+          error: 'Unauthorized: Invalid or expired authentication token.',
+        });
+      }
+    }
+  }
+  next();
+}
+
+app.use('/api', verifyAuthToken);
+
+// ================= GEMINI AI CLIENT & FALLBACK LADDER =================
 let aiClient: GoogleGenAI | null = null;
 function getAIClient(): GoogleGenAI {
   if (!aiClient) {
@@ -33,8 +130,6 @@ function getAIClient(): GoogleGenAI {
   return aiClient;
 }
 
-// 3. Resilient Model Fallback Ladder
-// High availability ordering with instant zero-stall failover
 const MODEL_FALLBACK_LADDER = [
   'gemini-flash-latest',
   'gemini-3.1-flash-lite',
@@ -67,7 +162,6 @@ async function generateContentWithFallback(options: FallbackOptions): Promise<st
       }
     } catch (err: any) {
       lastError = err;
-      // Model encountered transient spike or high demand (503) or rate limit (429) -> immediately try next model in ladder
       continue;
     }
   }
@@ -79,20 +173,23 @@ async function generateContentWithFallback(options: FallbackOptions): Promise<st
 
 // Health check
 app.get('/api/health', (req, res) => {
-  res.json({
+  res.status(200).json({
     status: 'ok',
+    service: 'reflect-ai-backend',
+    environment: process.env.NODE_ENV || 'development',
     timestamp: new Date().toISOString(),
     geminiConfigured: !!process.env.GEMINI_API_KEY,
+    firebaseAdminConfigured: getApps().length > 0,
   });
 });
 
 // Multi-turn Reflection Chat Endpoint
-app.post('/api/chat/reflect', async (req, res) => {
+app.post('/api/chat/reflect', async (req: AuthenticatedRequest, res) => {
   try {
     const body = req.body && typeof req.body === 'object' ? req.body : {};
     const messages = Array.isArray(body.messages) ? body.messages : [];
     const promptStarter = typeof body.promptStarter === 'string' ? body.promptStarter : '';
-    const userName = typeof body.userName === 'string' ? body.userName : 'the user';
+    const userName = typeof body.userName === 'string' ? body.userName : (req.user?.name || req.user?.email?.split('@')[0] || 'the user');
 
     if (messages.length === 0 && !promptStarter) {
       return res.status(400).json({ error: 'Messages or prompt starter required.' });
@@ -108,13 +205,11 @@ Guidelines:
 4. Keep answers concise, warm, structured, and easy to read (2-3 short paragraphs or bullet points where helpful).
 5. Never diagnose clinical conditions; offer grounding mindfulness techniques and constructive self-reflection.`;
 
-    // Format conversation history for Gemini API
     const formattedContents = messages.map((m: any) => ({
       role: m.sender === 'user' ? 'user' : 'model',
       parts: [{ text: String(m.text || '') }],
     }));
 
-    // If starting fresh with a starter
     if (formattedContents.length === 0 && promptStarter) {
       formattedContents.push({
         role: 'user',
@@ -136,16 +231,16 @@ Guidelines:
       timestamp: new Date().toISOString(),
     });
   } catch (error: any) {
-    console.error('Error in /api/chat/reflect:', error);
+    console.error('Error in /api/chat/reflect:', error?.message || error);
     res.status(500).json({
       error: 'Failed to generate reflection response',
-      details: error?.message || 'Server error',
+      details: process.env.NODE_ENV === 'production' ? 'AI service temporarily unavailable' : error?.message,
     });
   }
 });
 
 // Automated Sentiment & Metadata Analysis Endpoint
-app.post('/api/analyze/sentiment', async (req, res) => {
+app.post('/api/analyze/sentiment', async (req: AuthenticatedRequest, res) => {
   try {
     const body = req.body && typeof req.body === 'object' ? req.body : {};
     const messages = Array.isArray(body.messages) ? body.messages : [];
@@ -193,7 +288,6 @@ Do not include any surrounding markdown fences like \`\`\`json. Return raw JSON 
       const cleanJson = responseText.replace(/```json\n?|\n?```/g, '').trim();
       parsedResult = JSON.parse(cleanJson);
     } catch (parseErr) {
-      console.warn('Failed to parse JSON directly, falling back to heuristic parsing:', parseErr);
       parsedResult = {
         title: 'Daily Reflection',
         primaryEmotion: 'Reflective',
@@ -206,20 +300,20 @@ Do not include any surrounding markdown fences like \`\`\`json. Return raw JSON 
 
     res.json(parsedResult);
   } catch (error: any) {
-    console.error('Error in /api/analyze/sentiment:', error);
+    console.error('Error in /api/analyze/sentiment:', error?.message || error);
     res.status(500).json({
       error: 'Failed to analyze reflection sentiment',
-      details: error?.message || 'Server error',
+      details: process.env.NODE_ENV === 'production' ? 'Sentiment analysis service unavailable' : error?.message,
     });
   }
 });
 
 // Weekly Reflection Synthesis Endpoint
-app.post('/api/synthesis/weekly', async (req, res) => {
+app.post('/api/synthesis/weekly', async (req: AuthenticatedRequest, res) => {
   try {
     const body = req.body && typeof req.body === 'object' ? req.body : {};
     const entries = Array.isArray(body.entries) ? body.entries : [];
-    const userName = typeof body.userName === 'string' ? body.userName : 'the user';
+    const userName = typeof body.userName === 'string' ? body.userName : (req.user?.name || req.user?.email?.split('@')[0] || 'the user');
 
     if (entries.length === 0) {
       return res.status(400).json({ error: 'At least one reflection entry is required for weekly synthesis.' });
@@ -284,16 +378,16 @@ Return raw JSON only.`;
 
     res.json(parsedResult);
   } catch (error: any) {
-    console.error('Error in /api/synthesis/weekly:', error);
+    console.error('Error in /api/synthesis/weekly:', error?.message || error);
     res.status(500).json({
       error: 'Failed to generate weekly synthesis',
-      details: error?.message || 'Server error',
+      details: process.env.NODE_ENV === 'production' ? 'Synthesis service unavailable' : error?.message,
     });
   }
 });
 
 // Voice Note Transcription & Prose Cleanup Endpoint
-app.post('/api/transcribe', async (req, res) => {
+app.post('/api/transcribe', async (req: AuthenticatedRequest, res) => {
   try {
     const body = req.body && typeof req.body === 'object' ? req.body : {};
     const rawSpeech = typeof body.rawSpeech === 'string' ? body.rawSpeech : '';
@@ -324,10 +418,10 @@ Return only the cleaned reflection text.`;
       cleanedText: cleanedText.trim(),
     });
   } catch (error: any) {
-    console.error('Error in /api/transcribe:', error);
+    console.error('Error in /api/transcribe:', error?.message || error);
     res.status(500).json({
       error: 'Failed to clean voice transcript',
-      details: error?.message || 'Server error',
+      details: process.env.NODE_ENV === 'production' ? 'Transcription service unavailable' : error?.message,
     });
   }
 });
@@ -335,6 +429,7 @@ Return only the cleaned reflection text.`;
 // ================= VITE / STATIC MIDDLEWARE =================
 async function startServer() {
   if (process.env.NODE_ENV !== 'production') {
+    const { createServer: createViteServer } = await import('vite');
     const vite = await createViteServer({
       server: { middlewareMode: true },
       appType: 'spa',
@@ -348,11 +443,24 @@ async function startServer() {
     });
   }
 
+  // Global Error Handler
+  app.use((err: any, req: express.Request, res: express.Response, next: express.NextFunction) => {
+    console.error('Unhandled Server Error:', err?.message || err);
+    if (res.headersSent) {
+      return next(err);
+    }
+    res.status(500).json({
+      error: 'An internal server error occurred.',
+      message: process.env.NODE_ENV === 'production' ? 'Internal server error' : err?.message,
+    });
+  });
+
   app.listen(PORT, '0.0.0.0', () => {
-    console.log(`AI Journal & Reflection Server running on http://0.0.0.0:${PORT}`);
+    console.log(`Reflect-AI Server running on http://0.0.0.0:${PORT} (NODE_ENV=${process.env.NODE_ENV || 'development'})`);
   });
 }
 
 startServer().catch((err) => {
   console.error('Fatal error starting server:', err);
 });
+

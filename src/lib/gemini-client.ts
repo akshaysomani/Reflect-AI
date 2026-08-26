@@ -1,4 +1,18 @@
 import { ChatMessage, SentimentAnalysis, WeeklySynthesis, ReflectionEntry } from '../types';
+import { getCurrentUserToken } from './firebase';
+
+const API_BASE_URL = (import.meta.env.VITE_API_BASE_URL || '').replace(/\/$/, '');
+
+async function getAuthHeaders(): Promise<Record<string, string>> {
+  const headers: Record<string, string> = {
+    'Content-Type': 'application/json',
+  };
+  const token = await getCurrentUserToken();
+  if (token) {
+    headers['Authorization'] = `Bearer ${token}`;
+  }
+  return headers;
+}
 
 export async function askReflectionPartner(
   messages: ChatMessage[],
@@ -14,15 +28,16 @@ export async function askReflectionPartner(
     promptStarter,
   };
 
-  const res = await fetch('/api/chat/reflect', {
+  const headers = await getAuthHeaders();
+  const res = await fetch(`${API_BASE_URL}/api/chat/reflect`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers,
     body: JSON.stringify(payload),
   });
 
   if (!res.ok) {
     const errorData = await res.json().catch(() => ({}));
-    throw new Error(errorData.error || `Server responded with status ${res.status}`);
+    throw new Error(errorData.error || errorData.details || `Server responded with status ${res.status}`);
   }
 
   const data = await res.json();
@@ -41,15 +56,16 @@ export async function analyzeJournalSentiment(
     rawText,
   };
 
-  const res = await fetch('/api/analyze/sentiment', {
+  const headers = await getAuthHeaders();
+  const res = await fetch(`${API_BASE_URL}/api/analyze/sentiment`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers,
     body: JSON.stringify(payload),
   });
 
   if (!res.ok) {
     const errorData = await res.json().catch(() => ({}));
-    throw new Error(errorData.error || `Sentiment analysis failed: ${res.status}`);
+    throw new Error(errorData.error || errorData.details || `Sentiment analysis failed: ${res.status}`);
   }
 
   return await res.json();
@@ -64,24 +80,26 @@ export async function generateWeeklySynthesis(
     userName,
   };
 
-  const res = await fetch('/api/synthesis/weekly', {
+  const headers = await getAuthHeaders();
+  const res = await fetch(`${API_BASE_URL}/api/synthesis/weekly`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers,
     body: JSON.stringify(payload),
   });
 
   if (!res.ok) {
     const errorData = await res.json().catch(() => ({}));
-    throw new Error(errorData.error || `Weekly synthesis generation failed: ${res.status}`);
+    throw new Error(errorData.error || errorData.details || `Weekly synthesis generation failed: ${res.status}`);
   }
 
   return await res.json();
 }
 
 export async function cleanVoiceTranscript(rawSpeech: string): Promise<string> {
-  const res = await fetch('/api/transcribe', {
+  const headers = await getAuthHeaders();
+  const res = await fetch(`${API_BASE_URL}/api/transcribe`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers,
     body: JSON.stringify({ rawSpeech }),
   });
 
@@ -92,3 +110,4 @@ export async function cleanVoiceTranscript(rawSpeech: string): Promise<string> {
   const data = await res.json();
   return data.cleanedText || rawSpeech;
 }
+
