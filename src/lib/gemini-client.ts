@@ -6,15 +6,22 @@ const getApiBaseUrl = (): string => {
   if (envUrl && typeof envUrl === 'string' && envUrl.trim() !== '') {
     return envUrl.trim().replace(/\/$/, '');
   }
-  // Local development with separate dev server
+  // Local development fallback
   if (import.meta.env.DEV) {
     return 'http://localhost:3000';
   }
-  // In production, empty string uses the same origin (Vercel Serverless /api)
   return '';
 };
 
 export const API_BASE_URL = getApiBaseUrl();
+
+function assertApiConfigured(): void {
+  if (!API_BASE_URL && !import.meta.env.DEV) {
+    throw new Error(
+      'VITE_API_BASE_URL environment variable is missing on Vercel. Configure VITE_API_BASE_URL=https://<CLOUD_RUN_URL> in Vercel Settings > Environment Variables, then redeploy.'
+    );
+  }
+}
 
 async function getAuthHeaders(): Promise<Record<string, string>> {
   const headers: Record<string, string> = {
@@ -34,6 +41,7 @@ export async function checkBackendHealth(): Promise<{
   geminiConfigured?: boolean;
   firebaseAdminConfigured?: boolean;
 }> {
+  assertApiConfigured();
   const res = await fetch(`${API_BASE_URL}/api/health`);
   if (!res.ok) {
     throw new Error(`Health check failed with status: ${res.status}`);
@@ -46,6 +54,7 @@ export async function askReflectionPartner(
   userName: string = 'Friend',
   promptStarter?: string
 ): Promise<string> {
+  assertApiConfigured();
   const payload = {
     messages: messages.map((m) => ({
       sender: m.sender,
@@ -75,6 +84,7 @@ export async function analyzeJournalSentiment(
   messages: ChatMessage[],
   rawText?: string
 ): Promise<SentimentAnalysis> {
+  assertApiConfigured();
   const payload = {
     messages: messages.map((m) => ({
       sender: m.sender,
@@ -102,6 +112,7 @@ export async function generateWeeklySynthesis(
   entries: ReflectionEntry[],
   userName: string = 'Friend'
 ): Promise<Omit<WeeklySynthesis, 'id' | 'userId' | 'weekStartDate' | 'weekEndDate' | 'entryCount' | 'createdAt'>> {
+  assertApiConfigured();
   const payload = {
     entries,
     userName,
@@ -123,6 +134,7 @@ export async function generateWeeklySynthesis(
 }
 
 export async function cleanVoiceTranscript(rawSpeech: string): Promise<string> {
+  assertApiConfigured();
   const headers = await getAuthHeaders();
   const res = await fetch(`${API_BASE_URL}/api/transcribe`, {
     method: 'POST',
