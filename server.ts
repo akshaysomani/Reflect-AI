@@ -111,29 +111,26 @@ async function verifyAuthToken(
 app.use('/api', verifyAuthToken);
 
 // ================= GEMINI AI CLIENT & FALLBACK LADDER =================
-let aiClient: GoogleGenAI | null = null;
 function getAIClient(): GoogleGenAI {
-  if (!aiClient) {
-    const apiKey = process.env.GEMINI_API_KEY;
-    if (!apiKey) {
-      console.warn('GEMINI_API_KEY is not set in environment. Gemini features will require an API key.');
-    }
-    aiClient = new GoogleGenAI({
-      apiKey: apiKey || '',
-      httpOptions: {
-        headers: {
-          'User-Agent': 'aistudio-build',
-        },
-      },
-    });
+  const apiKey = process.env.GEMINI_API_KEY;
+  if (!apiKey || !apiKey.trim()) {
+    throw new Error('GEMINI_API_KEY is not configured in the environment.');
   }
-  return aiClient;
+  return new GoogleGenAI({
+    apiKey: apiKey.trim(),
+    httpOptions: {
+      headers: {
+        'User-Agent': 'aistudio-build',
+      },
+    },
+  });
 }
 
 const MODEL_FALLBACK_LADDER = [
-  'gemini-flash-latest',
-  'gemini-3.1-flash-lite',
-  'gemini-3.7-flash',
+  'gemini-2.5-flash',
+  'gemini-2.0-flash',
+  'gemini-1.5-flash',
+  'gemini-2.5-pro',
 ];
 
 interface FallbackOptions {
@@ -162,6 +159,7 @@ async function generateContentWithFallback(options: FallbackOptions): Promise<st
       }
     } catch (err: any) {
       lastError = err;
+      console.warn(`[Gemini SDK] Model '${model}' attempt failed:`, err?.message || err);
       continue;
     }
   }
@@ -178,7 +176,7 @@ app.get('/api/health', (req, res) => {
     service: 'reflect-ai-backend',
     environment: process.env.NODE_ENV || 'development',
     timestamp: new Date().toISOString(),
-    geminiConfigured: !!process.env.GEMINI_API_KEY,
+    geminiConfigured: !!(process.env.GEMINI_API_KEY && process.env.GEMINI_API_KEY.trim()),
     firebaseAdminConfigured: getApps().length > 0,
   });
 });
@@ -186,6 +184,14 @@ app.get('/api/health', (req, res) => {
 // Multi-turn Reflection Chat Endpoint
 app.post('/api/chat/reflect', async (req: AuthenticatedRequest, res) => {
   try {
+    if (!process.env.GEMINI_API_KEY || !process.env.GEMINI_API_KEY.trim()) {
+      console.error('[/api/chat/reflect] GEMINI_API_KEY environment variable is not configured.');
+      return res.status(503).json({
+        error: 'Gemini service unavailable',
+        details: 'GEMINI_API_KEY is not set in the server environment variables.',
+      });
+    }
+
     const body = req.body && typeof req.body === 'object' ? req.body : {};
     const messages = Array.isArray(body.messages) ? body.messages : [];
     const promptStarter = typeof body.promptStarter === 'string' ? body.promptStarter : '';
@@ -231,7 +237,7 @@ Guidelines:
       timestamp: new Date().toISOString(),
     });
   } catch (error: any) {
-    console.error('Error in /api/chat/reflect:', error?.message || error);
+    console.error('[/api/chat/reflect] Error generating reflection:', error?.message || error);
     res.status(500).json({
       error: 'Failed to generate reflection response',
       details: process.env.NODE_ENV === 'production' ? 'AI service temporarily unavailable' : error?.message,
@@ -242,6 +248,14 @@ Guidelines:
 // Automated Sentiment & Metadata Analysis Endpoint
 app.post('/api/analyze/sentiment', async (req: AuthenticatedRequest, res) => {
   try {
+    if (!process.env.GEMINI_API_KEY || !process.env.GEMINI_API_KEY.trim()) {
+      console.error('[/api/analyze/sentiment] GEMINI_API_KEY is not configured.');
+      return res.status(503).json({
+        error: 'Gemini service unavailable',
+        details: 'GEMINI_API_KEY is not set in server environment variables.',
+      });
+    }
+
     const body = req.body && typeof req.body === 'object' ? req.body : {};
     const messages = Array.isArray(body.messages) ? body.messages : [];
     const rawText = typeof body.rawText === 'string' ? body.rawText : '';
@@ -300,7 +314,7 @@ Do not include any surrounding markdown fences like \`\`\`json. Return raw JSON 
 
     res.json(parsedResult);
   } catch (error: any) {
-    console.error('Error in /api/analyze/sentiment:', error?.message || error);
+    console.error('[/api/analyze/sentiment] Error analyzing sentiment:', error?.message || error);
     res.status(500).json({
       error: 'Failed to analyze reflection sentiment',
       details: process.env.NODE_ENV === 'production' ? 'Sentiment analysis service unavailable' : error?.message,
@@ -311,6 +325,14 @@ Do not include any surrounding markdown fences like \`\`\`json. Return raw JSON 
 // Weekly Reflection Synthesis Endpoint
 app.post('/api/synthesis/weekly', async (req: AuthenticatedRequest, res) => {
   try {
+    if (!process.env.GEMINI_API_KEY || !process.env.GEMINI_API_KEY.trim()) {
+      console.error('[/api/synthesis/weekly] GEMINI_API_KEY is not configured.');
+      return res.status(503).json({
+        error: 'Gemini service unavailable',
+        details: 'GEMINI_API_KEY is not set in server environment variables.',
+      });
+    }
+
     const body = req.body && typeof req.body === 'object' ? req.body : {};
     const entries = Array.isArray(body.entries) ? body.entries : [];
     const userName = typeof body.userName === 'string' ? body.userName : (req.user?.name || req.user?.email?.split('@')[0] || 'the user');
@@ -378,7 +400,7 @@ Return raw JSON only.`;
 
     res.json(parsedResult);
   } catch (error: any) {
-    console.error('Error in /api/synthesis/weekly:', error?.message || error);
+    console.error('[/api/synthesis/weekly] Error generating synthesis:', error?.message || error);
     res.status(500).json({
       error: 'Failed to generate weekly synthesis',
       details: process.env.NODE_ENV === 'production' ? 'Synthesis service unavailable' : error?.message,
@@ -389,6 +411,14 @@ Return raw JSON only.`;
 // Voice Note Transcription & Prose Cleanup Endpoint
 app.post('/api/transcribe', async (req: AuthenticatedRequest, res) => {
   try {
+    if (!process.env.GEMINI_API_KEY || !process.env.GEMINI_API_KEY.trim()) {
+      console.error('[/api/transcribe] GEMINI_API_KEY is not configured.');
+      return res.status(503).json({
+        error: 'Gemini service unavailable',
+        details: 'GEMINI_API_KEY is not set in server environment variables.',
+      });
+    }
+
     const body = req.body && typeof req.body === 'object' ? req.body : {};
     const rawSpeech = typeof body.rawSpeech === 'string' ? body.rawSpeech : '';
 
@@ -418,7 +448,7 @@ Return only the cleaned reflection text.`;
       cleanedText: cleanedText.trim(),
     });
   } catch (error: any) {
-    console.error('Error in /api/transcribe:', error?.message || error);
+    console.error('[/api/transcribe] Error transcribing voice note:', error?.message || error);
     res.status(500).json({
       error: 'Failed to clean voice transcript',
       details: process.env.NODE_ENV === 'production' ? 'Transcription service unavailable' : error?.message,
