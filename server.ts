@@ -6,7 +6,7 @@ import { initializeApp, getApps } from 'firebase-admin/app';
 import { getAuth, DecodedIdToken } from 'firebase-admin/auth';
 import { GoogleGenAI } from '@google/genai';
 
-dotenv.config();
+dotenv.config({ override: true });
 
 const app = express();
 const PORT = Number(process.env.PORT) || 3000;
@@ -127,10 +127,9 @@ function getAIClient(): GoogleGenAI {
 }
 
 const MODEL_FALLBACK_LADDER = [
+  'gemini-3.6-flash',
   'gemini-2.5-flash',
   'gemini-2.0-flash',
-  'gemini-1.5-flash',
-  'gemini-2.5-pro',
 ];
 
 interface FallbackOptions {
