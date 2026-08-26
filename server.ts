@@ -491,14 +491,9 @@ async function startServer() {
   });
 }
 
-// Only start standalone HTTP server when not running in Vercel Serverless environment
-if (process.env.VERCEL !== '1') {
-  startServer().catch((err) => {
-    console.error('Fatal error starting server:', err);
-  });
-}
+startServer().catch((err) => {
+  console.error('Fatal error starting server:', err);
+});
 
-export default app;
-export { app };
 
 
