@@ -11,6 +11,9 @@ dotenv.config({ override: true });
 const app = express();
 const PORT = Number(process.env.PORT) || 3000;
 
+// Trust Cloud Run / reverse proxy headers for HTTPS & client IP resolution
+app.set('trust proxy', 1);
+
 // ================= FIREBASE ADMIN INITIALIZATION =================
 // Server-side Firebase Admin verification using project ID or ADC
 if (getApps().length === 0) {
@@ -45,33 +48,34 @@ const allowedOrigins = Array.from(
   new Set([...defaultAllowedOrigins, ...envFrontendOrigins])
 );
 
-app.use(
-  cors({
-    origin: (origin, callback) => {
-      // Allow requests with no origin (e.g. server-to-server, curl, Cloud Run health probes)
-      if (!origin) return callback(null, true);
+const corsOptions: cors.CorsOptions = {
+  origin: (origin, callback) => {
+    // Allow server-to-server, curl, health probes, or non-browser requests
+    if (!origin) return callback(null, true);
 
-      if (allowedOrigins.includes(origin) || allowedOrigins.includes('*')) {
-        return callback(null, true);
-      }
+    if (allowedOrigins.includes(origin) || allowedOrigins.includes('*')) {
+      return callback(null, true);
+    }
 
-      // Allow Vercel preview deployment origins if applicable
-      if (origin.endsWith('.vercel.app')) {
-        return callback(null, true);
-      }
+    // Allow Vercel preview deployment subdomains (*.vercel.app)
+    if (origin.endsWith('.vercel.app')) {
+      return callback(null, true);
+    }
 
-      return callback(
-        new Error(`CORS blocked: Origin ${origin} not permitted by Access-Control-Allow-Origin policy.`)
-      );
-    },
-    credentials: true,
-    methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
-    allowedHeaders: ['Content-Type', 'Authorization'],
-  })
-);
+    return callback(
+      new Error(`CORS blocked: Origin ${origin} not permitted by Access-Control-Allow-Origin policy.`)
+    );
+  },
+  credentials: true,
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'Accept'],
+  optionsSuccessStatus: 200,
+};
 
-// Explicit preflight handler
-app.options('*', cors());
+app.use(cors(corsOptions));
+
+// Explicit preflight handler for all routes
+app.options('*', cors(corsOptions));
 
 // ================= BODY PARSERS =================
 app.use(express.json({ limit: '10mb' }));
@@ -87,6 +91,11 @@ async function verifyAuthToken(
   res: express.Response,
   next: express.NextFunction
 ) {
+  // CORS preflight requests must never be blocked by authentication
+  if (req.method === 'OPTIONS') {
+    return next();
+  }
+
   const authHeader = req.headers.authorization;
   if (authHeader && authHeader.startsWith('Bearer ')) {
     const idToken = authHeader.split('Bearer ')[1].trim();
