@@ -96,13 +96,42 @@ gcloud artifacts repositories create reflect-ai-repo \
 ```
 
 ### 4.2 Build and Push Container Image via Cloud Build
-```bash
-# Run build submission from repository root
-gcloud builds submit \
+
+#### Option A: Single Line (Works in all terminals - Recommended)
+```powershell
+gcloud builds submit --tag us-central1-docker.pkg.dev/YOUR_PROJECT_ID/reflect-ai-repo/reflect-ai-backend:latest
+```
+
+#### Option B: PowerShell Multi-Line (Uses ` instead of \)
+```powershell
+gcloud builds submit `
   --tag us-central1-docker.pkg.dev/YOUR_PROJECT_ID/reflect-ai-repo/reflect-ai-backend:latest
 ```
 
+---
+
 ### 4.3 Deploy Service to Cloud Run
+
+> **Note**: Replace `YOUR_PROJECT_ID` with your actual Google Cloud Project ID (e.g., `gen-ai-cohort-3-defb5`).
+
+#### Option A: Single Line (Copy-paste friendly - Recommended for Windows PowerShell)
+```powershell
+gcloud run deploy reflect-ai-backend --image us-central1-docker.pkg.dev/YOUR_PROJECT_ID/reflect-ai-repo/reflect-ai-backend:latest --region us-central1 --platform managed --allow-unauthenticated --service-account reflect-ai-runner@YOUR_PROJECT_ID.iam.gserviceaccount.com --set-env-vars NODE_ENV=production,FRONTEND_URL="https://reflect-ai-xi-three.vercel.app,http://localhost:5173,http://localhost:3000",FIREBASE_PROJECT_ID="gen-ai-cohort-3-defb5" --set-secrets GEMINI_API_KEY=GEMINI_API_KEY:latest
+```
+
+#### Option B: PowerShell Multi-Line (Uses backtick ` for line continuation)
+```powershell
+gcloud run deploy reflect-ai-backend `
+  --image us-central1-docker.pkg.dev/YOUR_PROJECT_ID/reflect-ai-repo/reflect-ai-backend:latest `
+  --region us-central1 `
+  --platform managed `
+  --allow-unauthenticated `
+  --service-account reflect-ai-runner@YOUR_PROJECT_ID.iam.gserviceaccount.com `
+  --set-env-vars NODE_ENV=production,FRONTEND_URL="https://reflect-ai-xi-three.vercel.app,http://localhost:5173,http://localhost:3000",FIREBASE_PROJECT_ID="gen-ai-cohort-3-defb5" `
+  --set-secrets GEMINI_API_KEY=GEMINI_API_KEY:latest
+```
+
+#### Option C: Bash / Cloud Shell (Linux / macOS)
 ```bash
 gcloud run deploy reflect-ai-backend \
   --image us-central1-docker.pkg.dev/YOUR_PROJECT_ID/reflect-ai-repo/reflect-ai-backend:latest \
